@@ -208,6 +208,8 @@ def image_to_feature(image: dict[str, Any]) -> dict[str, Any] | None:
         "tms": img_props.get("tms"),
         "thumbnail": img_props.get("thumbnail"),
         "uploaded_at": image.get("uploaded_at"),
+        "uuid": image.get("uuid"),
+        "license": image.get("license") or img_props.get("license"),
     }
 
     return {

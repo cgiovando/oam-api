@@ -4,3 +4,5 @@ __pycache__/
 .env
 *.geojson
 *.pmtiles
+stats.json
+stats.csv

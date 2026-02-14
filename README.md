@@ -10,6 +10,9 @@ Static mirror of the [OpenAerialMap](https://openaerialmap.org) catalog. A daily
 | Vector tiles (PMTiles) | `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/images.pmtiles` |
 | Single image metadata | `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/meta/{image_id}` |
 
+| Quarterly stats (JSON) | `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.json` |
+| Quarterly stats (CSV) | `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.csv` |
+
 All endpoints support CORS and are publicly accessible.
 
 ## How It Works
@@ -89,6 +92,20 @@ python etl.py
 ```
 
 Requires [tippecanoe](https://github.com/felt/tippecanoe) for PMTiles generation.
+
+### Quarterly Stats
+
+```bash
+pip install -r requirements.txt
+export MONGODB_URI=mongodb+srv://user:pass@host/oam-api-production
+export AWS_BUCKET_NAME=cgiovando-oam-api
+export AWS_REGION=us-east-1
+python stats.py
+```
+
+Connects to the OAM production MongoDB to compute quarterly metrics:
+contributors, images uploaded, UAV images, and area coverage (sq km).
+Outputs `stats.json` and `stats.csv` to S3.
 
 ## Related
 

@@ -16,9 +16,11 @@ OAM API (/meta) → GitHub Actions (daily cron) → etl.py → S3 (public)
 
 ## Tech Stack
 - **ETL**: Python 3.11, boto3, requests
+- **Stats**: pymongo, shapely, pyproj (geodesic area from footprints)
 - **Vector tiles**: tippecanoe → PMTiles
 - **Storage**: AWS S3 (or S3-compatible via `S3_ENDPOINT_URL`)
-- **CI/CD**: GitHub Actions (daily cron + manual trigger)
+- **Database**: MongoDB Atlas (oam-api-production cluster, read-only access)
+- **CI/CD**: GitHub Actions (daily ETL cron + monthly stats cron)
 
 ## Key Files
 - `etl.py` — Main ETL script (~270 lines)
@@ -27,8 +29,13 @@ OAM API (/meta) → GitHub Actions (daily cron) → etl.py → S3 (public)
   - `StateManager` — Tracks `uploaded_at` per image for incremental sync
   - `image_to_feature()` — OAM image → GeoJSON Feature
   - `generate_pmtiles()` — tippecanoe wrapper
-- `requirements.txt` — boto3, requests
-- `.github/workflows/sync.yml` — Daily sync workflow
+- `stats.py` — Quarterly stats generator (~250 lines)
+  - Connects to OAM production MongoDB
+  - Computes: contributors, images, UAV images, area (sq km) per quarter
+  - Outputs JSON + CSV to S3
+- `requirements.txt` — boto3, requests, pymongo, shapely, pyproj
+- `.github/workflows/sync.yml` — Daily ETL sync workflow
+- `.github/workflows/stats.yml` — Monthly stats workflow
 
 ## S3 Bucket Structure
 ```
@@ -36,6 +43,8 @@ oam-api/
 ├── state.json                 # {image_id: uploaded_at} sync state
 ├── all_images.geojson         # All image footprints (~20k features)
 ├── images.pmtiles             # Vector tiles (z0-12, layer "images")
+├── stats.json                 # Quarterly stats (JSON)
+├── stats.csv                  # Quarterly stats (CSV)
 └── meta/
     └── {image_id}             # Individual image JSON (no extension)
 ```
@@ -59,6 +68,16 @@ oam-api/
 | `AWS_BUCKET_NAME` | Yes | Target S3 bucket |
 | `AWS_REGION` | Yes | e.g. `us-east-1` |
 | `S3_ENDPOINT_URL` | No | For S3-compatible storage (Source.coop) |
+| `MONGODB_URI` | stats.py | MongoDB connection string |
+
+## MongoDB Notes
+- Cluster: `oam-api-production.6ioyq.mongodb.net`
+- Database: `oam-api-production`
+- Key collections: `metas` (20k), `uploads` (17k), `users` (51k), `images` (42k), `analytics` (381k)
+- `metas` has footprints (`geojson`), `platform`, `uploaded_at`, `gsd`, `file_size`
+- `uploads` links users to scenes via `user` (ObjectId) and `createdAt`
+- Platform values are mixed case: "uav", "UAV", "satellite", "Satellite", "aircraft", "balloon", "kite"
+- `uploads` collection starts from Q4 2017 (no contributor tracking before that)
 
 ## Running Locally
 ```bash
