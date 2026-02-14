@@ -32,14 +32,20 @@ OAM API (/meta) → GitHub Actions (daily cron) → etl.py → S3 (public)
 - `stats.py` — Quarterly stats generator (~250 lines)
   - Connects to OAM production MongoDB
   - Computes: contributors, images, UAV images, area (sq km) per quarter
+  - True cumulative unique contributors (not just summed quarterly counts)
   - Outputs JSON + CSV to S3
+- `dashboard.html` — Static stats dashboard (single HTML file, Chart.js from CDN)
+  - Fetches `stats.json` from S3, renders 4 summary cards + 4 charts
+  - Deployed to S3 as `index.html`
+  - Auto-updates when stats.py refreshes the data (no redeployment needed)
 - `requirements.txt` — boto3, requests, pymongo, shapely, pyproj
-- `.github/workflows/sync.yml` — Daily ETL sync workflow
-- `.github/workflows/stats.yml` — Monthly stats workflow
+- `.github/workflows/sync.yml` — Daily ETL sync workflow (midnight UTC)
+- `.github/workflows/stats.yml` — Monthly stats workflow (1st of month, 06:00 UTC)
 
 ## S3 Bucket Structure
 ```
-oam-api/
+cgiovando-oam-api/
+├── index.html                 # Stats dashboard (from dashboard.html)
 ├── state.json                 # {image_id: uploaded_at} sync state
 ├── all_images.geojson         # All image footprints (~20k features)
 ├── images.pmtiles             # Vector tiles (z0-12, layer "images")
@@ -81,14 +87,36 @@ oam-api/
 
 ## Running Locally
 ```bash
+# ETL (daily sync from OAM API → S3)
 pip install -r requirements.txt
-export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_BUCKET_NAME=... AWS_REGION=...
-python etl.py
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_BUCKET_NAME=cgiovando-oam-api AWS_REGION=us-east-1
+python etl.py    # requires tippecanoe installed
+
+# Stats (quarterly metrics from MongoDB → S3)
+export MONGODB_URI=mongodb+srv://cri-db-reader:<password>@oam-api-production.6ioyq.mongodb.net/oam-api-production
+python stats.py
+
+# Dashboard (re-upload after editing)
+aws s3 cp dashboard.html s3://cgiovando-oam-api/index.html --content-type "text/html"
 ```
-Requires `tippecanoe` installed for PMTiles generation.
+
+## Live URLs
+- Dashboard: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/index.html`
+- GeoJSON: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/all_images.geojson`
+- PMTiles: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/images.pmtiles`
+- Stats JSON: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.json`
+- Stats CSV: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.csv`
+- Single image: `https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/meta/{image_id}`
+
+## GitHub
+- Repo: `cgiovando/oam-api`
+- Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BUCKET_NAME`, `AWS_REGION`, `MONGODB_URI`
+- IAM user: `oam-api-etl` (scoped to S3 bucket only)
 
 ## Key Design Decisions
 - Skip rebuild entirely if no new/changed images (cost optimization)
 - Individual image JSONs uploaded at `meta/{image_id}` (no .json extension, correct Content-Type)
 - State file tracks `uploaded_at` timestamps — if an image's timestamp changes, it gets re-uploaded
 - All images held in memory during ETL (feasible at ~20k scale)
+- Dashboard is a single HTML file with Chart.js CDN — no build step, auto-updates from stats.json
+- dashboard.html must be manually re-uploaded to S3 as index.html after edits (not in any workflow)
