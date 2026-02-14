@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenAerialMap Stats Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --hot-red: #d73f3f;
+    --hot-red-light: rgba(215, 63, 63, 0.15);
+    --dark: #1a1a2e;
+    --gray: #6b7280;
+    --light: #f8f9fa;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--light);
+    color: var(--dark);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--dark);
+    color: white;
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 1.4rem; font-weight: 600; }
+  header .subtitle { color: #9ca3af; font-size: 0.85rem; }
+  .updated { margin-left: auto; color: #9ca3af; font-size: 0.8rem; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card .label { font-size: 0.8rem; color: var(--gray); text-transform: uppercase; letter-spacing: 0.05em; }
+  .card .value { font-size: 2rem; font-weight: 700; color: var(--dark); margin-top: 0.25rem; }
+  .card .value.red { color: var(--hot-red); }
+  .card .sub { font-size: 0.8rem; color: var(--gray); margin-top: 0.25rem; }
+  .charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .chart-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .chart-card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+  .chart-wrap { position: relative; height: 300px; }
+  footer {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--gray);
+    font-size: 0.8rem;
+  }
+  footer a { color: var(--hot-red); text-decoration: none; }
+  .loading { text-align: center; padding: 4rem; color: var(--gray); }
+  @media (max-width: 600px) {
+    .charts { grid-template-columns: 1fr; }
+    .chart-wrap { height: 250px; }
+    header { padding: 1rem; }
+    .container { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>OpenAerialMap Dashboard</h1>
+    <div class="subtitle">Quarterly platform statistics</div>
+  </div>
+  <div class="updated" id="updated"></div>
+</header>
+
+<div class="container">
+  <div id="loading" class="loading">Loading stats...</div>
+
+  <div id="content" style="display:none">
+    <div class="cards">
+      <div class="card">
+        <div class="label">Total Images</div>
+        <div class="value red" id="total-images">-</div>
+        <div class="sub" id="total-images-sub"></div>
+      </div>
+      <div class="card">
+        <div class="label">UAV Images</div>
+        <div class="value" id="total-uav">-</div>
+        <div class="sub" id="total-uav-sub"></div>
+      </div>
+      <div class="card">
+        <div class="label">Contributors</div>
+        <div class="value" id="total-contributors">-</div>
+        <div class="sub" id="total-contributors-sub"></div>
+      </div>
+      <div class="card">
+        <div class="label">Area Covered</div>
+        <div class="value" id="total-area">-</div>
+        <div class="sub">sq km (from footprints)</div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <h2>Images Per Quarter</h2>
+        <div class="chart-wrap"><canvas id="chart-images"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h2>Cumulative Images</h2>
+        <div class="chart-wrap"><canvas id="chart-cumulative"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h2>Contributors Per Quarter</h2>
+        <div class="chart-wrap"><canvas id="chart-contributors"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h2>Cumulative Area Coverage (sq km)</h2>
+        <div class="chart-wrap"><canvas id="chart-area"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Data from <a href="https://openaerialmap.org">OpenAerialMap</a> &middot;
+  <a href="https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.json">stats.json</a> &middot;
+  <a href="https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.csv">stats.csv</a> &middot;
+  <a href="https://github.com/cgiovando/oam-api">Source</a>
+</footer>
+
+<script>
+const STATS_URL = "https://cgiovando-oam-api.s3.us-east-1.amazonaws.com/stats.json";
+const RED = "#d73f3f";
+const RED_BG = "rgba(215, 63, 63, 0.7)";
+const BLUE = "#2563eb";
+const BLUE_BG = "rgba(37, 99, 235, 0.7)";
+const GRAY_BG = "rgba(107, 114, 128, 0.3)";
+
+function fmt(n) {
+  return n.toLocaleString("en-US");
+}
+
+function fmtArea(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + "k";
+  return fmt(Math.round(n));
+}
+
+function makeChart(id, config) {
+  const ctx = document.getElementById(id).getContext("2d");
+  config.options = config.options || {};
+  config.options.responsive = true;
+  config.options.maintainAspectRatio = false;
+  config.options.plugins = config.options.plugins || {};
+  config.options.plugins.legend = config.options.plugins.legend || { display: true, position: "top", labels: { boxWidth: 12, padding: 12 } };
+  return new Chart(ctx, config);
+}
+
+async function load() {
+  const res = await fetch(STATS_URL);
+  const data = await res.json();
+
+  document.getElementById("loading").style.display = "none";
+  document.getElementById("content").style.display = "block";
+
+  const genDate = new Date(data.generated_at);
+  document.getElementById("updated").textContent = "Updated " + genDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+
+  // Summary cards
+  const q = data.quarters;
+  const latest = q[q.length - 1];
+  const prev = q.length > 1 ? q[q.length - 2] : null;
+
+  document.getElementById("total-images").textContent = fmt(data.total_images);
+  document.getElementById("total-images-sub").textContent = "+" + fmt(latest.images) + " this quarter";
+
+  document.getElementById("total-uav").textContent = fmt(data.total_uav_images);
+  const pctUav = ((data.total_uav_images / data.total_images) * 100).toFixed(0);
+  document.getElementById("total-uav-sub").textContent = pctUav + "% of all images";
+
+  document.getElementById("total-contributors").textContent = fmt(data.total_contributors);
+  document.getElementById("total-contributors-sub").textContent = "+" + fmt(latest.contributors) + " this quarter";
+
+  document.getElementById("total-area").textContent = fmtArea(data.total_area_sq_km);
+
+  // Prepare chart data
+  const labels = q.map(r => r.period);
+
+  // Images per quarter (stacked: UAV + non-UAV)
+  makeChart("chart-images", {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "UAV", data: q.map(r => r.uav_images), backgroundColor: RED_BG },
+        { label: "Non-UAV", data: q.map(r => r.images - r.uav_images), backgroundColor: GRAY_BG },
+      ]
+    },
+    options: {
+      scales: {
+        x: { stacked: true, ticks: { maxRotation: 45, font: { size: 10 } } },
+        y: { stacked: true, beginAtZero: true }
+      }
+    }
+  });
+
+  // Cumulative images
+  makeChart("chart-cumulative", {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Total", data: q.map(r => r.cumulative_images), borderColor: RED, backgroundColor: "rgba(215,63,63,0.1)", fill: true, tension: 0.3, pointRadius: 1.5 },
+        { label: "UAV", data: q.map(r => r.cumulative_uav_images), borderColor: BLUE, backgroundColor: "rgba(37,99,235,0.08)", fill: true, tension: 0.3, pointRadius: 1.5 },
+      ]
+    },
+    options: {
+      scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } }, y: { beginAtZero: true } }
+    }
+  });
+
+  // Contributors per quarter
+  makeChart("chart-contributors", {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Contributors", data: q.map(r => r.contributors), backgroundColor: BLUE_BG },
+      ]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { maxRotation: 45, font: { size: 10 } } }, y: { beginAtZero: true } }
+    }
+  });
+
+  // Cumulative area
+  makeChart("chart-area", {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Cumulative sq km", data: q.map(r => r.cumulative_area_sq_km), borderColor: RED, backgroundColor: "rgba(215,63,63,0.1)", fill: true, tension: 0.3, pointRadius: 1.5 },
+      ]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxRotation: 45, font: { size: 10 } } },
+        y: { beginAtZero: true, ticks: { callback: v => fmtArea(v) } }
+      }
+    }
+  });
+}
+
+load().catch(err => {
+  document.getElementById("loading").textContent = "Failed to load stats: " + err.message;
+});
+</script>
+</body>
+</html>
