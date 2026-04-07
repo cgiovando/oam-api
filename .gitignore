@@ -6,3 +6,8 @@ __pycache__/
 *.pmtiles
 stats.json
 stats.csv
+
+.timesheet-log.md
+CLAUDE.md
+PROJECT_NOTES.md
+AGENTS.md
